@@ -20,7 +20,7 @@
 # shellcheck disable=SC2206  # intentional IFS-controlled array splits throughout
 # shellcheck disable=SC2207  # intentional IFS-controlled array splits throughout
 # -------------------------------------------------------------------------------
-typeset -A SD__INTERN 2>/dev/null
+typeset -A SD__INTERN
 [[ ${SD__INTERN[debug]:-0} == 0 ]] && [[ -n ${SD__INTERN[loaded]+1} ]] && return
 
 function _sd__checkshell {
@@ -49,7 +49,7 @@ function _sd__checkshell {
 _sd__checkshell || { unset -f _sd__checkshell; return 1; }
 
 function _sd__man {  ## pdf?
-   typeset -a formatter=(groff -man) pager=(less -R)
+   typeset -a formatter=(groff -man) pager=(less -R)  offon=('off' 'on')
    if [[ ${1:-tty} == pdf ]]; then
       formatter+=(-Tpdf)
       pager=(cat)
@@ -70,10 +70,10 @@ function _sd__man {  ## pdf?
    fi
 
    # ensure correct alignment in the dynamic SD_CFG[key]=value listing in manpage.
-   typeset -A pad len
+   typeset -A pad=() len=()
    typeset -i maxlen=0
    typeset key
-   typeset -a keys
+   typeset -a keys=()
    # shellcheck disable=SC2296  # shellcheck does not handle zsh-specific syntax
    [[ -n ${ZSH_VERSION-} ]] && keys=("${(k)SD_CFG[@]}") || keys=("${!SD_CFG[@]}")
    for key in "${keys[@]}"; do
@@ -96,7 +96,7 @@ sd \- switch between directories using a dynamic directory stack
 .RI [ pattern | pathname | \- ]
 .LP
 .SY ds
-.OP \-012Vcfhimpsw
+.OP \-012Vcfhimnopsw
 |
 .OP \-d pat
 |
@@ -190,7 +190,7 @@ Selection mode for
 .B ds
 .IR pattern :
 0 (tabular view), 1 (indexed selection), 2 (fzf finder, default).
-Current:
+Current value:
 .BR ${SD_CFG[mode]} .
 .TP
 .B \-V
@@ -206,7 +206,7 @@ from logfile/history.
 .TP
 .BI \-e " pow"
 Set power law exponent for age-scoring. Fractional values allowed.
-Current:
+Current value:
 .BR ${SD_CFG[power]} .
 .TP
 .B \-f
@@ -222,7 +222,7 @@ Status and configuration info.
 Cap stack size at
 .I K
 directories (set K=0 to disable).
-Current:
+Current value:
 .BR ${SD_CFG[stacklim]} .
 .TP
 .BI \-l " N"
@@ -237,11 +237,26 @@ or
 .B \-l
 .I l
 to maximize (use full history).
-Current:
+Current value:
 .BR ${SD_CFG[window]} .
 .TP
 .B \-m
 Display manpage.
+.TP
+.B \-n
+On/off toggle: whether to freeze logfile (default: off). If switched on, cd actions
+in the present shell will not be stored in the logfile. Current state:
+.BR ${offon[SD_CFG[freeze]]} .
+.TP
+.B \-o
+On/off toggle: whether to update stack (default: on). If switched off, cd actions
+do no longer trigger directory stack updates, making the stack content
+"static" (stack recomputation is still triggered by any of
+.B ds
+.BR "\-[cdefkl]" ).
+This also ensures invariant rank order on the stack which sometimes might be desirable.
+Current state:
+.BR ${offon[SD_CFG[dynamic]]} .
 .TP
 .B \-p
 Send PDF version of manpage to stdout.
@@ -468,8 +483,9 @@ take effect only during startup and are ignored if modified later:
 typeset \-A SD_CFG=(
    [logdir]=${SD__LOGDIR}${pad[logdir]} # absolute path to logfile directory **
    [loglim]=${SD__LOGLIM}${pad[loglim]} # max. cd actions in logfile **
+   [dynamic]=${SD_CFG[dynamic]}${pad[dynamic]} # auto-update stack after each cd?
+   [freeze]=${SD_CFG[freeze]}${pad[freeze]} # freeze logfile? (usually: don't)
    [mode]=${SD_CFG[mode]}${pad[mode]} # controls behavior of \fBds \fIpattern\fR
-   [freeze]=${SD_CFG[freeze]}${pad[freeze]} # freeze logfile yes/no (usually: don't)
    [period]=${SD_CFG[period]}${pad[period]} # auto-save period in seconds
    [power]=${SD_CFG[power]}${pad[power]} # power exponent for score computation
    [prefix]="${SD_CFG[prefix]}"${pad[prefix]} # prefix char for \fBcd \fI=num\fR actions
@@ -483,21 +499,23 @@ typeset \-A SD_CFG=(
 After sourcing
 .IR sd.ksh ,
 the keys
-.BR freeze ,
 .BR period ,
 .BR prefix ,
 .BR smartcase ,
 and
 .B verbose
 usually need not be modified (though possible). The keys
+.BR dynamic ,
+.BR freeze ,
 .BR mode ,
 .BR power ,
 .BR stacklim ,
-and
 .B window
-can be changed transiently with
+might be changed transiently with
 .B ds
 options
+.BR \-o ,
+.BR \-n ,
 .BR \-[012] ,
 .BR \-e ,
 .BR \-k ,
@@ -686,6 +704,7 @@ function _sd__setup {
    typeset -i mode
    command -v fzf >/dev/null
    ((mode = $? == 0? 2:1))
+   : "${SD_CFG[dynamic]:="1"}"
    : "${SD_CFG[freeze]:="0"}"
    : "${SD_CFG[mode]:="$mode"}"
    : "${SD_CFG[period]:="3600"}"
@@ -710,7 +729,7 @@ function _sd__setup {
    : "${SD__INTERN[mysd]:="0"}"
    : "${SD__INTERN[mysdset]:="0"}"
    : "${SD__INTERN[sleep]:="0.01"}"
-   : "${SD__INTERN[version]:="SD v3.1-98157353"}"
+   : "${SD__INTERN[version]:="SD v3.1-acd48404"}"
 
    typeset -i failure=0
    if [[ ${SD__LOGDIR} != /* ]]; then
@@ -837,12 +856,12 @@ function _sd__logappend { ## 1/0 (1: called in exit trap)
          (( flag )) && exit 0 || return 0
       fi
       (( retry < 2 )) && sleep "${SD__INTERN[sleep]}"
-    done
-    # if we get here, we have failed to get lock and can't update db. if this happens in the exit
-    # trap we loose the SD__NEW content but logfile will be unharmed. if it happens during ongoing
-    # shell session it means we cannot update _now_. we thus do not clear SD__NEW but preserve it for
-    # next update attempt.
-    (( flag )) && exit 1 || return 1
+   done
+   # if we get here, we have failed to get lock and can't update db. if this happens in the exit
+   # trap we loose the SD__NEW content but logfile will be unharmed. if it happens during ongoing
+   # shell session it means we cannot update _now_. we thus do not clear SD__NEW but preserve it for
+   # next update attempt.
+   (( flag )) && exit 1 || return 1
 }
 
 function _sd__logread {
@@ -919,11 +938,11 @@ function _sd__remove {
 }
 
 function _sd__clean {
-   typeset -a fresh stale
+   typeset -a fresh=() stale=()
    typeset dname check
 
    for dname in "${SD__ALL[@]}"; do
-      if [[ -d ${dname/#~/$HOME} ]]; then
+      if [[ -d ${dname/#'~'/$HOME} ]]; then
          fresh+=("$dname")
       else
          stale+=("$dname")
@@ -985,7 +1004,7 @@ function _sd__info {
       printf '%s' "$on$text$off"
    }
 
-   typeset immu='' space rule1 rule2 ruler1 ruler2
+   typeset static='' immu='' space rule1 rule2 ruler1 ruler2
    case "${LC_ALL:-${LC_CTYPE:-${LANG}}}" in
       *UTF-8*|*utf8*|*UTF8*|*utf-8*)
          rule1=$'\u2500'
@@ -1009,23 +1028,22 @@ function _sd__info {
       )
    fi
 
-   typeset seltxt=('tabular listing' 'index-based selection' 'fzf-based selection')
-   typeset smrtxt=('Case-sensitive' 'Smartcase')
+   typeset -a seltxt=('tabular listing' 'index-based selection' 'fzf-based selection')
+   typeset -a smrtxt=('Case-sensitive' 'Smartcase')
    typeset -i wd1=${#SD__LOGLIM} wl=${#entries} wd2
    ((wd1 = wd1 > 5? wd1:5))  # for very small loglim (<100) we might get misalignment otherwise
    ((wd1 = wd1 > wl? wd1:wl)) && ((wd1+= 9)) # to account for the color escapes
    ((wd2 = wd1 - 1))  # csi no-color escapes (bold, underline..)
 
-   if (( SD_CFG[freeze] )); then
-      immu=$(printf '%s' "$(_sd__dye " is immutable: SD_CFG[freeze]=${SD_CFG[freeze]}" 7)")
-   fi
+   (( SD_CFG[freeze] )) && immu=$(printf '%s' " $(_sd__dye "(immutable)" 7)")
+   (( SD_CFG[dynamic] )) || static=$(printf '%s' "$(_sd__dye "(static)" 7)")
 
    report+='%s\n'   # $ruler2
-   report+="logfile   : %s\n"
+   report+="logfile   : %s%s\n"
    report+="loglim    : %*s     Logfile pruning threshold\n"
    report+="history   : %*s     Logged cd actions (%s not yet saved)\n"
    report+="window    : %*s     Trailing window for stack computation\n"
-   report+="stack     : %*s     Directories on stack\n"
+   report+="stacksize : %*s     Directories currently on stack %s\n"
    report+="power     : %*s     Age penalty parameter (0 = no penalty)\n"
    report+="mode      : %*s     'ds [pattern]' uses %s\n"
    report+="verbose   : %*s     Verbosity level [012]\n"
@@ -1037,11 +1055,11 @@ function _sd__info {
    # shellcheck disable=SC2059  # spurious: report expands to a static format string
    printf "$report" \
       "$ruler2" \
-      "$(_sd__dye "${SD__LOGFILE}" 4)$immu" \
+      "$(_sd__dye "${SD__LOGFILE}" 4)" "$immu" \
       "$wd2" "$(_sd__dye "${SD__LOGLIM}" 1)" \
       "$wd1" "$(_sd__dye "${entries}" 31)" "$(_sd__dye "$newnum" 31)" \
       "$wd1" "$(_sd__dye "${SD_CFG[window]}" 32)" \
-      "$wd1" "$(_sd__dye "$stacksize" 33)" \
+      "$wd1" "$(_sd__dye "$stacksize" 33)" "$static"\
       "$wd1" "$(_sd__dye "${SD_CFG[power]}" 34)" \
       "$wd1" "$(_sd__dye "${SD_CFG[mode]}" 35)" "$(_sd__dye "${seltxt[${SD_CFG[mode]}]}" 35)" \
       "$wd1" "$(_sd__dye "${SD_CFG[verbose]}" 36)" \
@@ -1202,7 +1220,7 @@ function _sd__switch {  ## regex
    typeset pat="$*"
    case $pat in
       -h|--help)
-         typeset -a msg
+         typeset -a msg=()
          msg+=("Usage: [cd|sd] [pattern|pathname|-]. Full documentation: ds -m.")
          msg+=("If you actually meant pattern $pat: cd \\\\$pat.")
          printf '%s\n' "${msg[@]}"
@@ -1250,10 +1268,15 @@ function _sd__switch {  ## regex
       # ------------------------------------------------------------
       elif (( ${#SD__ALL[@]} > SD_CFG[window] )); then
          (( SD_CFG[verbose] == 2 )) && printf '%s' 'No match on windowed stack' >&2
-         typeset window=${SD_CFG[window]}
-         ((SD_CFG[window] = ${#SD__ALL[@]})); _sd__stack # expand to full stack
+         typeset wstack=$SD__STACK
+         typeset -i window=${SD_CFG[window]}
+          # expand to full stack
+         ((SD_CFG[window] = ${#SD__ALL[@]}))
+         _sd__stack
          _sd__name "$pat"
-         ((SD_CFG[window] = window)); _sd__stack # restore windowed stack
+         # restore windowed stack (no need to actually recompute)
+         SD__STACK=$wstack
+         ((SD_CFG[window] = window))
 
          # --------------------------------------------------------------------------------
          # A. Successful cd on full stack
@@ -1294,12 +1317,12 @@ function _sd__switch {  ## regex
    # variable: direct use of literal '~' as replacement string works in ksh/bash but not zsh
    # (zsh treats replacement string verbatim including quotes).
 
-   if [[ $PWD == !($HOME|$OLDPWD|/) ]]; then
+   if [[ $PWD != @($HOME|$OLDPWD|/) ]]; then
       typeset entry tilde='~'
       entry="${PWD/#$HOME/$tilde}"
       SD__NEW+="$entry"$'\n'
       SD__ALL+=("$entry")
-      _sd__stack
+      (( SD_CFG[dynamic] )) && _sd__stack
    fi
    if (( SECONDS > SD__STATE[stamp] + SD_CFG[period] )); then
       (( SD__INTERN[debug] )) && printf '%s' "$SD__NEW"
@@ -1330,7 +1353,7 @@ function _sd__choose { ## matches
    elif (( SD_CFG[mode] == 2 )); then
       # THINK: make fzf options user-settable via further SD_CFG[] entries?
       command -v fzf >/dev/null || { printf '%s\n' 'executable for "fzf" fuzzy finder not found -- do not use mode=2'; return 1; }
-      typeset -a opts
+      typeset -a opts=()
       opts+=(--preview 'pathname={2..}; LC_ALL=C ls -Al --color=always "${pathname/#~/$HOME}"')
       opts+=(--color 'header:bright-red')
       opts+=(--header 'selected name will be passed to cd')
@@ -1338,7 +1361,7 @@ function _sd__choose { ## matches
       dname=$(printf '%s\n' "$matches" | awk -F'\t' '{print $NF}' | nl | fzf "${opts[@]}")
       [[ -z $dname ]] && return 2
       dname=$(printf '%s\n' "$dname" | cut -f2)
-      dname=${dname/#~/$HOME}
+      dname=${dname/#'~'/$HOME}
    fi
    cd "$dname" || return
 }
@@ -1352,7 +1375,7 @@ function _sd__wincalc { ## stacklim
    typeset -i stacklim=$1     # non-digit value: cast to numeric 0
    typeset -i n dircount=0 bufsize=${#SD__ALL[@]}
    typeset key
-   typeset -A seen
+   typeset -A seen=()
    ((stacklim = stacklim > 0? stacklim:bufsize))
    for ((n = bufsize - 1; n >= 0; n--)); do
       # kept as memo: using "((++seen[$key] > 1)) && continue" to test for "key has been
@@ -1362,16 +1385,16 @@ function _sd__wincalc { ## stacklim
       [[ -n ${seen[$key]+1} ]] && continue
       seen[$key]=1
       (( ++dircount == stacklim )) && break
-    done
-    ((SD_CFG[window] = n < 0? bufsize:bufsize - n))  #n=-1 happens if loop completes
-    ((SD_CFG[stacklim] = dircount))
+   done
+   ((SD_CFG[window] = n < 0? bufsize:bufsize - n))  #n=-1 happens if loop completes
+   ((SD_CFG[stacklim] = dircount))
 }
 
-function _sd__dispatch {  ##  [-012Vcd:e:fhik:l:mpsw] | [-s] [pattern]
-   typeset optstring=012Vcd:e:fhik:l:mpsw
+function _sd__dispatch {  ##  [-012Vcd:e:fhik:l:mnopsw] | [-s] [pattern]
+   typeset optstring=012Vcd:e:fhik:l:mnopsw
    typeset opt key matches
-   typeset -a keys
-   typeset -A opflag
+   typeset -a keys=()
+   typeset -A opflag=()
    # NOTE TO SELF: ksh does make OPTIND local automatically but the other shells (bash, zsh) do not.
    # so we explicitly declare OPTIND local. for zsh, it is relevant to also reset to 1 it seems.
    # but zsh getopts exhibits really deviant behaviour if getopts while loop is left via "break" as
@@ -1387,19 +1410,15 @@ function _sd__dispatch {  ##  [-012Vcd:e:fhik:l:mpsw] | [-s] [pattern]
       case $opt in
          [012])
             SD_CFG[mode]=$opt
-            opflag[$opt]=1
             ;;
          V)
             printf '%s\n' "${SD__INTERN[version]}"
-            opflag[$opt]=1
             ;;
          c)
             _sd__clean
-            opflag[$opt]=1
             ;;
          d)
             _sd__remove "$OPTARG"
-            opflag[$opt]=1
             ;;
          e)
             if [[ $OPTARG == +([0-9])?(.*([0-9])) ]]; then
@@ -1407,24 +1426,20 @@ function _sd__dispatch {  ##  [-012Vcd:e:fhik:l:mpsw] | [-s] [pattern]
                (( ${OPTARG%.*} >= maxpow )) && ((OPTARG = maxpow))
                SD_CFG[power]=$OPTARG  # relevant to _not_ use arithmetic context because: bash (OPTARG might equal 2.5, e.g.)
             fi
-            opflag[$opt]=1
             ;;
          f)
             _sd__logappend
             _sd__logread
-            opflag[$opt]=1
             ;;
          h)
             printf '%s\n' "Usage: ds -[$optstring] [pattern]"
             printf '%s\n' "For full documentation: ds -m"
-            opflag[$opt]=1
             ;;
          i)
-            opflag[$opt]=1
+            :
             ;;
          k)
             _sd__wincalc "$OPTARG"
-            opflag[$opt]=1
             ;;
          l)
             typeset window=$OPTARG
@@ -1433,34 +1448,37 @@ function _sd__dispatch {  ##  [-012Vcd:e:fhik:l:mpsw] | [-s] [pattern]
             [[ $window == +([0-9]) ]] || window=0
             ((SD_CFG[window] = window > 0? window:lines))
             SD_CFG[stacklim]=0
-            opflag[$opt]=1
             ;;
          m)
             _sd__man
-            opflag[$opt]=1
+            ;;
+         n)
+            ((SD_CFG[freeze] = 1 - SD_CFG[freeze]))
+            ;;
+         o)
+            ((SD_CFG[dynamic] = 1 - SD_CFG[dynamic]))
             ;;
          p)
             _sd__man pdf
-            opflag[$opt]=1
             ;;
          s)
-            opflag[$opt]=1
+            :
             ;;
          w)
             _sd__logappend
-            opflag[$opt]=1
             ;;
          *)
             return 1
       esac
+      opflag[$opt]=1
    done
    shift $((OPTIND - 1))
 
    # shellcheck disable=SC2296  # shellcheck does not handle zsh-specific syntax
    [[ -n ${ZSH_VERSION-} ]] && keys=("${(k)opflag[@]}") || keys=("${!opflag[@]}")
    for key in "${keys[@]}"; do
-      [[ $key == [elk] ]]  && { _sd__stack 1; }
-      [[ $key == [eilk] ]] && { _sd__info; break; }
+      [[ $key == [ekl] ]]  && { _sd__stack 1; }
+      [[ $key == [eiklno] ]] && { _sd__info; break; }
    done
 
    if (( $# == 0 )); then
@@ -1499,7 +1517,7 @@ elif [[ -n ${ZSH_VERSION+x} ]]; then
    unset SD__ALIASES_ON SD__ALIASFD_ON
 fi
 # ===========================================================================================================
-typeset -A SD_CFG SD__STATE   # always declare assoc arrays before use (even in ksh this is wise).
+typeset -A SD_CFG SD__STATE   # ensure assoc arrays are declared before use (do not init: they might already exist)
 typeset -a SD__ALL
 typeset SD__STACK SD__NEW
 typeset SD__LOGDIR SD__LOGLIM SD__LOGFILE SD__LOCK SD__MAGIC SD__TRPCMD SD__TRPSIG   # to be made readonly soon
