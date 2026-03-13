@@ -49,7 +49,7 @@ function _sd__checkshell {
 _sd__checkshell || { unset -f _sd__checkshell; return 1; }
 
 function _sd__man {  ## pdf?
-   typeset -a formatter=(groff -man) pager=(less -R)  offon=('off' 'on')
+   typeset -a formatter=(groff -man) pager=(less -R) offon=('off' 'on')
    if [[ ${1:-tty} == pdf ]]; then
       formatter+=(-Tpdf)
       pager=(cat)
@@ -96,7 +96,7 @@ sd \- switch between directories using a dynamic directory stack
 .RI [ pattern | pathname | \- ]
 .LP
 .SY ds
-.OP \-012Vcfhimnopsw
+.OP \-012Vcfhimnopw
 |
 .OP \-d pat
 |
@@ -106,6 +106,7 @@ sd \- switch between directories using a dynamic directory stack
 |
 .OP \-l N
 |
+.OP \-s
 .RI [ pattern ]
 .YS
 .SH DESCRIPTION
@@ -197,10 +198,12 @@ Current value:
 Version info.
 .TP
 .B \-c
-Clean logfile/history: remove stale entries.
+Clean up logfile/history by removing stale entries. This will also affect
+entries pointing to locations on temporarily unmounted file systems/drives.
+If such entries need to be retained, do not use this option.
 .TP
 .BI \-d " pat"
-Delete all entries matching pattern
+Delete entries matching pattern
 .I pat
 from logfile/history.
 .TP
@@ -261,14 +264,19 @@ Current state:
 .B \-p
 Send PDF version of manpage to stdout.
 .TP
+.B \-r
+Show score and rank info for present working directory.
+.TP
 .B \-s
-Display
-.B ds
-.I pattern
-matches alphabetically (default: by relevance).
+.B "ds -s
+.RI [ pattern ]
+displays matches sorted alphabetically rather than by rank.
 .TP
 .B \-w
 Write newly visited directories to logfile immediately.
+.TP
+.B \-y
+Show recent directory visits (trailing segment of the recorded history).
 .
 .
 .SH USAGE
@@ -286,7 +294,7 @@ quotes). Arguments are first tried as literal pathnames. Special cases
 .B sd
 (no args),
 .B sd
-.I \- ,
+.IR \- ,
 and
 .B sd
 .I .
@@ -325,15 +333,15 @@ to jump directly to a specific stack position (e.g.,
 .BI "sd " =
 is equivalent to
 .B sd
-.IR  = .
+.IR  =1 .
 Note:
 .B zsh
 users must quote the equal sign.
 .LP
 The
 .B ds
-command serves two purposes. With an option, it acts as a configuration
-interface. As
+command serves two purposes. With an option, it acts as a configuration, management,
+and inspection interface. As
 .B ds
 .IR pattern ,
 it provides interactive selection from matching stack entries. If
@@ -349,7 +357,7 @@ is available and multiple matches exist,
 .I pattern
 opens the
 .B fzf
-interface. Note that
+interface.
 .B fzf
 is non-standard and may require separate installation.
 .B fzf
@@ -418,7 +426,7 @@ is sourced.
 may update the logfile intermittently during the shell session
 and always updates on shell termination. Intermittent updates are controlled
 by
-.BR \${SD_CFG[period]} ,
+.BR SD_CFG[period] ,
 which sets a threshold in seconds after which the next cd triggers a logfile
 update (current:
 .BR ${SD_CFG[period]} ).
@@ -436,6 +444,20 @@ shells by issuing
 .B \-f
 in one or both, which forces a logfile update and reload. Generally, this is
 rarely necessary.
+.LP
+In concurrent multi-shell use, logfile ordering is not guaranteed to be strictly
+chronological unless
+.B SD_CFG[period]=0
+is set. In practice this rarely affects ranking noticeably.
+.LP
+Note:
+.B SD
+uses a shell EXIT/HUP/TERM trap to trigger logfile updates on shell termination
+(see
+.IR INITIAL\ SETUP ).
+During logfile updates, SD temporarily ignores INT and QUIT signals to protect
+against interruption. After the update, the default signal handling for these
+signals is restored.
 .
 .
 .SH SHELL VARIABLES AND FUNCTIONS
@@ -589,6 +611,16 @@ This line may be preceded by
 array definition to customize behavior (see
 .IR CUSTOMIZATION ).
 .LP
+.B SD
+installs a shell EXIT/HUP/TERM trap to ensure logfile updates on shell shell
+termination. This overrides any existing custom trap definitions for these
+signals in the current shell: if you rely on custom trap handlers, ensure that
+they are reinstalled after sourcing
+.IR sd.ksh ,
+and incorporate the SD trap command
+.B ${SD__TRPCMD}
+into your own handler.
+.LP
 At first use, the logfile is seeded with non-hidden toplevel directories in
 \$HOME (emulating a single visit to each in alphabetical order) to provide a
 starting point. Subsequently, the logfile reflects actual cd activities.
@@ -690,7 +722,6 @@ function _sd__setup {
    : "${SD__LOCK:="${SD__LOGDIR}/_sd.lockdir"}"
    : "${SD__MAGIC:="## sd: log of visited directories (keep this line) ##"}"
    : "${SD__TRPCMD:="typeset -f _sd__logappend > /dev/null && _sd__logappend 1"}"
-   : "${SD__TRPSIG:="1 2 3 15"}"
 
    # assign [logdir] and [loglim] keys to reflect the actually operational values (which might differ
    # if we are sourcing a 2nd time and user has modified these two CFG keys in the meantime). they
@@ -714,6 +745,7 @@ function _sd__setup {
    : "${SD_CFG[stacklim]:="0"}"
    : "${SD_CFG[verbose]:="1"}"
    : "${SD_CFG[window]:="1280"}"
+   [[ ${SD_CFG[window]} != [1-9]*([0-9]) ]] && SD_CFG[window]=1280  # guard against nonsensical user config specification, notably window=0
 
    : "${SD__STATE[dname]:=""}"
    : "${SD__STATE[fail]:="0"}"
@@ -729,7 +761,7 @@ function _sd__setup {
    : "${SD__INTERN[mysd]:="0"}"
    : "${SD__INTERN[mysdset]:="0"}"
    : "${SD__INTERN[sleep]:="0.01"}"
-   : "${SD__INTERN[version]:="SD v3.1-acd48404"}"
+   : "${SD__INTERN[version]:="SD v3.1-626cb6e6"}"
 
    typeset -i failure=0
    if [[ ${SD__LOGDIR} != /* ]]; then
@@ -749,15 +781,16 @@ function _sd__setup {
 
          printf '%s\n' "$msg" > "${SD__LOGDIR}/README"
          printf '%s' "
-         =========================================================================
-         This is a reminder that you are now using the SD utility (sd.ksh) which
-         defines two new commands 'sd' and 'ds' (provided these names are not used
-         already for other commands or aliases in your namespace) that act as
-         replacement for the 'cd' command. You can view the manpage with 'ds -m'
-         (or '_sd__man', if the 'ds' name is not available).
+         =============================================================
+         This is a reminder that you are now using the SD utility
+         (sd.ksh) which defines two new commands 'sd' and 'ds'
+         (provided these names are not used already for other commands
+         or aliases in your namespace) that act as replacement for the
+         'cd' command. You can view the manpage with 'ds -m' (or
+         '_sd__man', if the 'ds' name is not available).
 
-                           This message will not be shown again.
-         =========================================================================
+                     This message will not be shown again.
+         =============================================================
 
          View manpage now? (Y/n) "; read -r
          : "${REPLY:=Y}"
@@ -788,13 +821,13 @@ function _sd__setup {
          _sd__name _sd__remove _sd__seed _sd__checkshell _sd__stack _sd__wincalc
 
       unset SD_CFG SD__STATE SD__INTERN
-      unset SD__LOGDIR SD__LOGLIM SD__LOGFILE SD__LOCK SD__MAGIC SD__TRPCMD SD__TRPSIG
+      unset SD__LOGDIR SD__LOGLIM SD__LOGFILE SD__LOCK SD__MAGIC SD__TRPCMD
       return $failure
    else
       if [[ -d "${SD__LOCK}" ]]; then   # should be a stale lock
          find "${SD__LOCK}" -prune -mmin +1 -exec rmdir {} \; 2>/dev/null
       fi
-      readonly SD__LOGDIR SD__LOGLIM SD__LOGFILE SD__LOCK SD__MAGIC SD__TRPCMD SD__TRPSIG
+      readonly SD__LOGDIR SD__LOGLIM SD__LOGFILE SD__LOCK SD__MAGIC SD__TRPCMD
       unset -f _sd__checkshell _sd__logcheck
    fi
 }
@@ -814,10 +847,7 @@ function _sd__logwrite { # ext
       mkdir "${SD__LOCK}" 2>/dev/null || return
    fi
 
-   typeset IFS=' '   # we need to ensure correct field splitting of SD__TRPSIG into separate signals
-   # shellcheck disable=SC2086  # word splitting intended
-   set -- ${SD__TRPSIG}
-   trap '' "$@"      # deactivate all (non-zero) traps until we are done
+   trap '' HUP TERM # deactivate these traps until we are done
 
    typeset tmpfile="${SD__LOGFILE}_tmp.$$"
    typeset -i stat=1
@@ -835,7 +865,7 @@ function _sd__logwrite { # ext
 
    # Restore exit trap and return.
    # shellcheck disable=SC2064  # trap string intentionally fixed at definition time, not when signalled
-   trap "${SD__TRPCMD}" 0 "$@"
+   trap "${SD__TRPCMD}" EXIT HUP TERM
    return $stat
 }
 
@@ -843,6 +873,7 @@ function _sd__logappend { ## 1/0 (1: called in exit trap)
    if [[ -z $SD__NEW ]] || (( SD_CFG[freeze] )); then
       return
    fi
+   trap '' HUP INT QUIT TERM
    typeset -i flag=${1:-0}
    typeset -i retry
    for ((retry = 0; retry < 3; retry++)); do
@@ -853,6 +884,9 @@ function _sd__logappend { ## 1/0 (1: called in exit trap)
          rmdir "${SD__LOCK}" 2>/dev/null
          SD__NEW=''
          SD__STATE[stamp]=$SECONDS
+         trap - HUP INT QUIT TERM
+         # shellcheck disable=SC2064  # trap string intentionally fixed at definition time, not when signalled
+         trap "${SD__TRPCMD}" EXIT HUP TERM
          (( flag )) && exit 0 || return 0
       fi
       (( retry < 2 )) && sleep "${SD__INTERN[sleep]}"
@@ -861,6 +895,9 @@ function _sd__logappend { ## 1/0 (1: called in exit trap)
    # trap we loose the SD__NEW content but logfile will be unharmed. if it happens during ongoing
    # shell session it means we cannot update _now_. we thus do not clear SD__NEW but preserve it for
    # next update attempt.
+   trap - HUP INT QUIT TERM
+   # shellcheck disable=SC2064  # trap string intentionally fixed at definition time, not when signalled
+   trap "${SD__TRPCMD}" EXIT HUP TERM
    (( flag )) && exit 1 || return 1
 }
 
@@ -905,36 +942,37 @@ function _sd__logread {
 }
 
 function _sd__remove {
-   typeset check window=${SD_CFG[window]}
+   typeset -i window
+   typeset check
    typeset IFS=' '
    typeset pat="$*"
 
-   ((SD_CFG[window] = ${#SD__ALL[@]})) && _sd__stack # expand...
+   ((window = SD_CFG[window]))
+   ((SD_CFG[window] = ${#SD__ALL[@]})) && _sd__stack
+
    typeset IFS=$'\n'
    typeset -a dnames=($(_sd__match 1 "$pat"))
    typeset -a astack=($SD__STACK)
 
    if (( ${#dnames[@]} == 0 )); then
       printf '%s\n' "$pat: No match"
-      return
    elif (( ${#dnames[@]} == ${#astack[@]} )); then
       printf '%s\n' "The pattern '$pat' selects your complete history for deletion." \
                      "This looks like a mistake."
-      return
+   else
+      printf '%s\n' "${dnames[@]}" | LC_ALL=C sort | nl
+      printf 'remove these directory names from history? [y/N] '
+      read -r check
+      : "${check:=N}"
+      if [[ "$check" == y ]]; then
+         # we want grep -F to avoid any regex interpretation of names in dnames. the -f
+         # flag allows to pass a file of fixed patterns so we use that via the below construct.
+         SD__ALL=( $(printf '%s\n' "${SD__ALL[@]}" | grep -F -v -f <(printf '%s\n' "${dnames[@]}")) )
+         SD__NEW=''
+         _sd__logwrite remove
+      fi
    fi
-
-   printf '%s\n' "${dnames[@]}" | nl
-   printf 'remove these directory names from history? [y/N] '
-   read -r check
-   : "${check:=N}"
-   if [[ "$check" == y ]]; then
-      # we want grep -F to avoid any regex interpretation of names in dnames. the -f
-      # flag allows to pass a file of fixed patterns so we use that via the below construct.
-      SD__ALL=( $(printf '%s\n' "${SD__ALL[@]}" | grep -F -v -f <(printf '%s\n' "${dnames[@]}")) )
-      SD__NEW=''
-      _sd__logwrite remove
-   fi
-   ((SD_CFG[window] = window)) && _sd__stack 1  # ...recompute stack (and reset retry counter)
+   ((SD_CFG[window] = window)) && _sd__stack 1
 }
 
 function _sd__clean {
@@ -949,13 +987,7 @@ function _sd__clean {
       fi
    done
    if (( ${#stale[@]} > 0 )); then
-      # enforcing newline as IFS is mandatory due to the array assignment of unquoted content (the
-      # result of the printf|sort pipe). note that "IFS=$'\n' stale=(...)" would _not_ make IFS
-      # change transient. this only works for simple commands/assignments, not for a process
-      # substitution like here.
-      typeset IFS=$'\n'
-      stale=( $(printf "%s\n" "${stale[@]}" | LC_ALL=C sort -u) )
-      printf '%s\n' "${stale[@]}" | nl
+      printf '%s\n' "${stale[@]}" | LC_ALL=C sort -u | nl
       printf 'eliminate these stale entries from history? [y/N] '
       read -r check
       : "${check:=N}"
@@ -1041,11 +1073,11 @@ function _sd__info {
    report+='%s\n'   # $ruler2
    report+="logfile   : %s%s\n"
    report+="loglim    : %*s     Logfile pruning threshold\n"
-   report+="history   : %*s     Logged cd actions (%s not yet saved)\n"
+   report+="history   : %*s     Recorded events (%s not yet flushed to disk)\n"
    report+="window    : %*s     Trailing window for stack computation\n"
    report+="stacksize : %*s     Directories currently on stack %s\n"
    report+="power     : %*s     Age penalty parameter (0 = no penalty)\n"
-   report+="mode      : %*s     'ds [pattern]' uses %s\n"
+   report+="mode      : %*s     'ds [pattern]' provides %s\n"
    report+="verbose   : %*s     Verbosity level [012]\n"
    report+="prefix    : %*s     Prefix for rank-based cd\n"
    report+="smartcase : %*s     %s matching\n"
@@ -1164,7 +1196,7 @@ function _sd__name {  ## regex
                   printf '%s\n' "trying match no. $tries" >&2
                ((keepgoing = 1))
             else
-               if (( SD_CFG[verbose] >= 1 )); then
+               if (( SD_CFG[verbose] > 0 )); then
                   if (( tries > 2 )); then
                      printf '%s\n' '*** starting over *** ' >&2
                   else
@@ -1391,8 +1423,9 @@ function _sd__wincalc { ## stacklim
 }
 
 function _sd__dispatch {  ##  [-012Vcd:e:fhik:l:mnopsw] | [-s] [pattern]
-   typeset optstring=012Vcd:e:fhik:l:mnopsw
-   typeset opt key matches
+   typeset optstring=012Vcd:e:fhik:l:mnoprswy
+   typeset opt matches
+   typeset -i showinfo=0
    typeset -a keys=()
    typeset -A opflag=()
    # NOTE TO SELF: ksh does make OPTIND local automatically but the other shells (bash, zsh) do not.
@@ -1461,11 +1494,31 @@ function _sd__dispatch {  ##  [-012Vcd:e:fhik:l:mnopsw] | [-s] [pattern]
          p)
             _sd__man pdf
             ;;
+         r)
+            if [[ $PWD == @($HOME|/) ]]; then
+               printf '%s\n' "'$HOME' and '/' are not tracked by SD"
+            else
+               typeset tilde='~'
+               printf '%s\n' "$SD__STACK" |
+                  pat="${PWD/#$HOME/$tilde}" awk -F'\t' '
+                     $4 == ENVIRON["pat"] {
+                        gsub(/ *$/, "", $1)
+                        printf("%s: score %s (rank %s)\n", ENVIRON["pat"], $1, $3)
+                     }
+                  '
+            fi
+            ;;
          s)
             :
             ;;
          w)
             _sd__logappend
+            ;;
+         y)
+            typeset -i nrow=$(($(tput lines) - 2))
+            typeset -i lognum=${#SD__ALL[@]}
+            ((nrow = nrow > lognum? lognum:nrow))  # again: only bash needs this measure
+            printf '%s\n' "${SD__ALL[@]: -$nrow}" | nl -v $((lognum - nrow + 1))
             ;;
          *)
             return 1
@@ -1476,10 +1529,13 @@ function _sd__dispatch {  ##  [-012Vcd:e:fhik:l:mnopsw] | [-s] [pattern]
 
    # shellcheck disable=SC2296  # shellcheck does not handle zsh-specific syntax
    [[ -n ${ZSH_VERSION-} ]] && keys=("${(k)opflag[@]}") || keys=("${!opflag[@]}")
-   for key in "${keys[@]}"; do
-      [[ $key == [ekl] ]]  && { _sd__stack 1; }
-      [[ $key == [eiklno] ]] && { _sd__info; break; }
-   done
+
+   [[ ${keys[*]} == *[ino]* ]] && showinfo=1
+   if [[ ${keys[*]} == *[ekl]* ]]; then
+      (( SD_CFG[verbose] > 0 )) && showinfo=1
+      _sd__stack 1
+   fi
+   (( showinfo )) && _sd__info
 
    if (( $# == 0 )); then
       (( ${#keys[@]} == 0 )) || (( opflag[s] )) || return 0   # a bit opaque: a non-'ds -s' call w/ option but w/o argument must return now
@@ -1520,7 +1576,7 @@ fi
 typeset -A SD_CFG SD__STATE   # ensure assoc arrays are declared before use (do not init: they might already exist)
 typeset -a SD__ALL
 typeset SD__STACK SD__NEW
-typeset SD__LOGDIR SD__LOGLIM SD__LOGFILE SD__LOCK SD__MAGIC SD__TRPCMD SD__TRPSIG   # to be made readonly soon
+typeset SD__LOGDIR SD__LOGLIM SD__LOGFILE SD__LOCK SD__MAGIC SD__TRPCMD # to be made readonly soon
 
 if ! _sd__setup; then
    unset -f _sd__setup
@@ -1528,14 +1584,9 @@ if ! _sd__setup; then
 fi
 unset -f _sd__setup
 
-# account for possibility of non-standard user IFS. do not rely on implicit field splitting of
-# trpsig when setting the trap.
-typeset sd_oldIFS=$IFS
-IFS=' '
-# shellcheck disable=SC2086  # word splitting intended
+# set the logfile-update trap to be executed when the shell is terminating.
 # shellcheck disable=SC2064  # trap string intentionally fixed at definition time, not when signalled
-trap "${SD__TRPCMD}" 0 ${SD__TRPSIG}
-IFS=$sd_oldIFS && unset sd_oldIFS
+trap "${SD__TRPCMD}" EXIT HUP TERM
 
 if ! command -v ds > /dev/null; then
    SD__INTERN[myds]=1 && function ds { _sd__dispatch "$@"; }

@@ -1,5 +1,29 @@
 # SD — Changelog
 
+## v3.1-626cb6e6 (2026-04-05)
+* **better signal interception handling**: previously, even INT and QUIT signals
+  were springing the logfile update trap but this never made much sense (and even
+  could get into the user's way in ksh and zsh -- bash is nicer here). The trap now
+  only springs on shell terminating signals (EXIT HUP TERM). Logfile update/rewrite
+  functions handle signal interception and trap management a bit clearer than
+  before.
+
+* **fixed minor regression**: `ds -d` needs always to reset the stack, even if no
+  entries are actually deleted from the logfile. The recently introduced early
+  return cases erroneously bypassed this reset.
+
+* **formatting**: `ds -d` now reports the to-be-deleted entries in alphabetical
+  order to facilitate scrutiny of the list.
+
+* **New `ds` options**:
+    * `-r`: Report score and rank info for present working directory.
+    * `-y`: Report chronological list of most recent cd events.
+
+* **reporting**: improve logic of when to implicitly trigger `ds -i` output after
+   interactive configuration change via any option from `[eklno]`.
+
+* **manpage**: several small adjustments.
+
 ## v3.1-acd48404 (2026-03-12)
 * **New `ds` options `-n` and `-o`**: Toggle `SD_CFG[freeze]` and
     `SD_CFG[dynamic]` states.
