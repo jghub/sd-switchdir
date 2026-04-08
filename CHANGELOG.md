@@ -1,5 +1,35 @@
 # SD — Changelog
 
+## v3.2.0 (2026-04-14)
+* **improved handling of globbing during array construction**: all string-to-array
+  conversions are now executed with globbing temporarily disabled
+  (`set -o noglob` / `set +o noglob`) to prevent pathname expansion from affecting
+  unquoted word-splitting of input data. Globbing is then re-enabled unconditionally,
+  under the assumption that it is normally active in interactive shells and not
+  deliberately disabled by the user.
+
+* **bypass interactive selection for unique matches**: previously, `ds pattern`
+  yielding a unique match bypassed the interactive selection interface only for
+  `mode=2` (fzf-based selection) by letting `fzf` handle this case. It now also
+  works for `mode=1` (index-based selection) and for `mode=2` avoids calling
+  `fzf` at all.
+
+* **make fzf behaviour user configurable**: SD now provides a new associative
+  array `SD_FZF` which holds `fzf` option/value pairs (see `ds -m` for details).
+  Definitions in `SD_FZF` take precedence over any conflicting settings in
+  `FZF_DEFAULT_OPTS`.
+
+* **minor fix**: ensure that buffer holding new `cd` events is only reset as a side
+  effect of cleaning/deleting/pruning entries from history if logfile recreation
+  actually succeeded; in this case the auto-update timestamp is now reset, too.
+  Behaviour is now consistent with append-only update logic.
+
+* **adjustments to `ds -i` report**: include flush delay information.
+
+* **changed tag naming scheme**: tag names no longer include the checkout hash
+  from the master repository and now use semantic version identifiers in the form
+  `v1.2.3`.
+
 ## v3.1-626cb6e6 (2026-04-05)
 * **better signal interception handling**: previously, even INT and QUIT signals
   were springing the logfile update trap but this never made much sense (and even
