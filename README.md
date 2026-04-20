@@ -244,10 +244,11 @@ Runtime adjustments (via `ds`):
 
 Other directory-jumping tools include:
 
-* z
-* autojump
-* fasd
-* zoxide
+* [autojump](https://github.com/wting/autojump)
+* [fasd](https://github.com/clvv/fasd)
+* [jumper](https://github.com/homerours/jumper)
+* [z](https://github.com/rupa/z)
+* [zoxide](https://github.com/ajeetdsouza/zoxide)
 
 These tools maintain per-directory aggregate state rather than a full sequence of
 visits. SD retains the complete visit history up to a configurable limit and
