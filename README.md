@@ -128,7 +128,7 @@ where:
 * $p$ is the power-law exponent
 * $n_i$ are the event indices within the window at which directory $i$ was visited
 
-Higher $p$ increases recency bias. Default: $p = 9.97$.
+Higher $p$ increases recency bias. Default: $p = 10$.
 
 Properties:
 
@@ -218,7 +218,7 @@ Define only the keys you want to override:
 typeset -A SD_CFG=(
     [loglim]=8192
     [window]=1280
-    [power]=9.97
+    [power]=10
     [stacklim]=0
     [smartcase]=1
     [verbose]=1

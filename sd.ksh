@@ -87,7 +87,7 @@ function _sd__man {  ## pdf?
 
    cat <<-HERE | "${formatter[@]}" | "${pager[@]}"
 .\"----------------------------------------------------------
-.TH SD 1 "January 25, 2026"
+.TH SD 1 "April 16, 2026"
 .nh
 .SH NAME
 sd \- switch between directories using a dynamic directory stack
@@ -257,8 +257,8 @@ do no longer trigger directory stack updates, making the stack content
 "static" (stack recomputation is still triggered by any of
 .B ds
 .BR "\-[cdefkl]" ).
-This also ensures invariant rank order on the stack which sometimes might be desirable.
-Current state:
+This also ensures invariant rank order on the stack which sometimes might be
+desirable. Current state:
 .BR ${offon[SD_CFG[dynamic]]} .
 .TP
 .B \-p
@@ -340,8 +340,8 @@ users must quote the equal sign.
 .LP
 The
 .B ds
-command serves two purposes. With an option, it acts as a configuration, management,
-and inspection interface. As
+command serves two purposes. With an option, it acts as a configuration,
+management, and inspection interface. As
 .B ds
 .IR pattern ,
 it provides interactive selection from matching stack entries. If
@@ -359,19 +359,19 @@ opens the
 interface
 (mode
 .BR 2 ).
+If
+.B ds
+.I pattern
+yields a unique match, cd executes immediately.
 .B fzf
-is non-standard and may require separate installation.
+is non-standard and may require separate installation. By default,
 .B fzf
-displays the stack bottom-up by default (highest ranking match at bottom), with the
-entry initially selected being the one
+displays the stack bottom-up (highest ranking match at bottom), with
+the entry initially selected being the one
 .B sd
 .I pattern
 would have chosen. Selection is done at the fzf prompt or via mouse (see
 .BR fzf (1)).
-If
-.B ds
-.I pattern
-has a unique match, by default cd executes immediately without opening fzf.
 Selecting a stale entry in fzf will fail, whereas
 .B sd
 .I pattern
@@ -472,7 +472,7 @@ Limitations
 .LP
 Due to the internal use of tab-separated fields for stack representation,
 directory names containing tab characters are not supported. Such paths may
-lead to incorrect matching or display behavior and should be avoided.
+lead to incorrect matching or display behaviour and should be avoided.
 .
 .
 .SH SHELL VARIABLES AND FUNCTIONS
@@ -483,7 +483,7 @@ User-visible internal variables follow
 .BR SD__VARNAME .
 The associative array
 .B SD_CFG
-holds configuration information. Default behavior can be changed by modifying
+holds configuration information. Default behaviour can be changed by modifying
 this array in your shell rc file (see
 .IR CUSTOMIZATION ).
 Some
@@ -523,7 +523,7 @@ typeset \-A SD_CFG=(
    [loglim]=${SD__LOGLIM}${pad[loglim]} # max. cd actions in logfile (\fB**\fP)
    [dynamic]=${SD_CFG[dynamic]}${pad[dynamic]} # auto-update stack after each cd?
    [freeze]=${SD_CFG[freeze]}${pad[freeze]} # freeze logfile? (usually: don't)
-   [mode]=${SD_CFG[mode]}${pad[mode]} # controls behavior of \fBds \fIpattern\fR
+   [mode]=${SD_CFG[mode]}${pad[mode]} # controls behaviour of \fBds \fIpattern\fR
    [period]=${SD_CFG[period]}${pad[period]} # flush delay period in seconds
    [power]=${SD_CFG[power]}${pad[power]} # power exponent for score computation
    [prefix]='${SD_CFG[prefix]}'${pad[prefix]} # prefix char for \fBcd \fI=num\fR actions
@@ -564,25 +564,40 @@ respectively.
 .SS "fzf behaviour
 .LP
 .B fzf
-behaviour is customized by defining entries in the associative array
+behaviour is customized via the associative array
 .BR SD_FZF ,
-using fzf long option names without the -- prefix as keys, for example:
+using long option names (without the leading
+.BR -- )
+as keys. Options that do not take a value are specified in
+.B SD_FZF
+with an empty value, for example:
 .LP
 .EX
-typeset \-A SD_FZF=(
-   [exact]=''
-   [layout]='default'
+typeset -A SD_FZF=(
+   [cycle]=''
+   [tmux]='center,80%,border-native'
 )
 .EE
 .LP
-Options that take no value are specified with an empty string as value.
-As with
-.BR SD_CFG ,
-custom definitions of
-.BR SD_FZF
-keys should be put in the shell rc file prior to sourcing
-.BR sd.ksh .
-Note that the fzf options
+User-defined entries in
+.B SD_FZF
+may be set either before or after sourcing
+.B sd.ksh
+and generally override internal defaults. The only exception is the default
+definition
+.BR SD_FZF[exact]='' .
+To disable the
+.B --exact
+option, unset the entry
+.I after
+sourcing
+.BR sd.ksh :
+.LP
+.EX
+unset SD_FZF[exact]
+.EE
+.LP
+The options
 .B --preview
 and
 .B --no-sort
@@ -590,17 +605,13 @@ are set internally by
 .B SD
 and cannot be overridden via
 .BR SD_FZF .
-None of the
-.BR SD_FZF
-keys are exposed via dedicated
+No dedicated
 .B ds
-options; manual redefinition of
-.B SD_FZF
-keys is possible if transient changes are needed.
-The current
-.B SD_FZF
+options exist for modifying
+.BR SD_FZF ;
+transient changes may be made by editing the array directly. The current
 configuration can be inspected with
-.BR "typeset -p SD_FZF" .
+.BR "typeset -p SD_FZF.
 .
 .
 .SH DIRECTORY STACK ALGORITHM
@@ -666,7 +677,7 @@ Source the script in your shell resource file:
 .LP
 This line may be preceded by
 .B SD_CFG
-array definition to customize behavior (see
+array definition to customize behaviour (see
 .IR CUSTOMIZATION ).
 .LP
 .B SD
@@ -798,19 +809,20 @@ function _sd__setup {
    # now set the other SD_CFG keys (do this before the failure tests block since on first use user is
    # offered to view manpage immediately -- and the manpage reports the values).
    typeset -i mode
+   typeset -i window=1280
    command -v fzf >/dev/null
    ((mode = $? == 0? 2:1))
    : "${SD_CFG[dynamic]:="1"}"
    : "${SD_CFG[freeze]:="0"}"
    : "${SD_CFG[mode]:="$mode"}"
    : "${SD_CFG[period]:="3600"}"
-   : "${SD_CFG[power]:="9.97"}"
+   : "${SD_CFG[power]:="10"}"
    : "${SD_CFG[prefix]:="="}"; [[ ${SD_CFG[prefix]} == [=:,+?] ]] || SD_CFG[prefix]='='
    : "${SD_CFG[smartcase]:="1"}"
    : "${SD_CFG[stacklim]:="0"}"
    : "${SD_CFG[verbose]:="1"}"
-   : "${SD_CFG[window]:="1280"}"
-   [[ ${SD_CFG[window]} != [1-9]*([0-9]) ]] && SD_CFG[window]=1280  # guard against nonsensical user config specification, notably window=0
+   : "${SD_CFG[window]:="$window"}"
+   [[ ${SD_CFG[window]} != [1-9]*([0-9]) ]] && SD_CFG[window]="$window"  # guard against nonsensical user config specification, notably window=0
 
    : "${SD_FZF[bind]:="ctrl-j:accept"}"
    : "${SD_FZF[color]:="header:bright-red"}"
@@ -833,7 +845,10 @@ function _sd__setup {
    : "${SD__INTERN[mysd]:="0"}"
    : "${SD__INTERN[mysdset]:="0"}"
    : "${SD__INTERN[sleep]:="0.01"}"
-   : "${SD__INTERN[version]:="3.2.0"}"
+   : "${SD__INTERN[version]:="3.2.1"}"
+
+   : "${SD__STACK:=""}"
+   : "${SD__NEW:=""}"
 
    typeset -i failure=0
    if [[ ${SD__LOGDIR} != /* ]]; then
@@ -892,7 +907,7 @@ function _sd__setup {
          _sd__logappend _sd__logcheck _sd__logread _sd__logwrite _sd__man _sd__match \
          _sd__name _sd__remove _sd__seed _sd__checkshell _sd__stack _sd__wincalc
 
-      unset SD_CFG SD__STATE SD__INTERN
+      unset SD_CFG SD_FZF SD__STATE SD__INTERN SD__STACK SD__NEW
       unset SD__LOGDIR SD__LOGLIM SD__LOGFILE SD__LOCK SD__MAGIC SD__TRPCMD
       return $failure
    else
@@ -1450,7 +1465,6 @@ function _sd__switch {  ## regex
       (( SD_CFG[dynamic] )) && _sd__stack
    fi
    if (( SECONDS > SD__STATE[stamp] + SD_CFG[period] )); then
-      (( SD__INTERN[debug] )) && printf '%s' "$SD__NEW"
       _sd__logappend
    fi
 }

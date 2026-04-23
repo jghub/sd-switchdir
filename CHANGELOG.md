@@ -1,5 +1,19 @@
 # SD — Changelog
 
+## v3.2.1 (2026-04-24)
+* **manpage**: better explanation of `fzf` configurability via `SD_FZF`.
+
+* **fix `set -u` edge case**: running `ds -i` before the first `cd` with
+    `set -u` enabled previously raised an "unbound variable" error.
+
+* **fix housekeeping edge case**: if initial setup failed, some variables were
+    not properly unset.
+
+* **default value adjustment**: the power law exponent now defaults to 10 rather
+  than 9.97. The old value was chosen to make the weight at the midpoint of the
+  attention window drop to exactly 1/1000; the round value 10 is numerically
+  equivalent for practical purposes.
+
 ## v3.2.0 (2026-04-14)
 * **improved handling of globbing during array construction**: all string-to-array
   conversions are now executed with globbing temporarily disabled
