@@ -87,7 +87,7 @@ function _sd__man {  ## pdf?
 
    cat <<-HERE | "${formatter[@]}" | "${pager[@]}"
 .\"----------------------------------------------------------
-.TH SD 1 "April 16, 2026"
+.TH SD 1 "May 09, 2026"
 .nh
 .SH NAME
 sd \- switch between directories using a dynamic directory stack
@@ -96,7 +96,7 @@ sd \- switch between directories using a dynamic directory stack
 .RI [ pattern | pathname | \- ]
 .LP
 .SY ds
-.OP \-012Vcfhimnopw
+.OP \-012Vcfhimnoprw
 |
 .OP \-d pat
 |
@@ -207,9 +207,9 @@ Delete entries matching pattern
 .I pat
 from logfile/history.
 .TP
-.BI \-e " pow"
-Set power law exponent for age-scoring. Fractional values allowed.
-Current value:
+.BI \-e " p"
+Set the age-penalty parameter of the convolution kernel. Higher values decrease
+relevance of older visits. Fractional values allowed. Current value:
 .BR ${SD_CFG[power]} .
 .TP
 .B \-f
@@ -525,11 +525,12 @@ typeset \-A SD_CFG=(
    [freeze]=${SD_CFG[freeze]}${pad[freeze]} # freeze logfile? (usually: don't)
    [mode]=${SD_CFG[mode]}${pad[mode]} # controls behaviour of \fBds \fIpattern\fR
    [period]=${SD_CFG[period]}${pad[period]} # flush delay period in seconds
-   [power]=${SD_CFG[power]}${pad[power]} # power exponent for score computation
+   [power]=${SD_CFG[power]}${pad[power]} # age-penalty parameter
    [prefix]='${SD_CFG[prefix]}'${pad[prefix]} # prefix char for \fBcd \fI=num\fR actions
    [smartcase]=${SD_CFG[smartcase]}${pad[smartcase]} # smartcase matching yes/no
    [stacklim]=${SD_CFG[stacklim]}${pad[stacklim]} # prescribe directory stack size
    [verbose]=${SD_CFG[verbose]}${pad[verbose]} # verbosity level [012]
+   [kernel]=${SD_CFG[kernel]}${pad[kernel]} # kernel type (0: power law, 1: exponential)
    [window]=${SD_CFG[window]}${pad[window]} # window size
 )
 .EE
@@ -623,7 +624,7 @@ the last event (which has age zero).
 Analysis is restricted to a trailing segment ("window") covering N events,
 enumerated n=1 (oldest) to n=N (newest). Window width determines
 .BR SD 's
-"attention span". Example: 50 cd/day with window width 500 corresponds to ~10
+"attention span". Example: ~40 cd/day with window width 1200 corresponds to ~30
 days of history. Logfile size determines available "long-term memory".
 .LP
 A score F ("frecency") is computed for each distinct directory
@@ -631,25 +632,40 @@ A score F ("frecency") is computed for each distinct directory
 encountered in the window:
 .LP
 .EX
-   F[i] = sum_n{i} (n{i}/N)^p
+   F[i] = sum_n{i} K[N \- n{i}]
 .EE
 .LP
 where the sum runs over all event indices
 .I n{i}
 involving directory
-.IR i .
-Conceptually, this represents the convolution (T {*} K)[N] of
-a time series T{i}[n] (value 1 at positions
+.IR i ,
+and K[j] is an aging kernel assigning a weight to events of age j=N\-n (j=0 for
+the most recent event, j=N\-1 for the oldest). Formally, F[i] represents the
+convolution (T{i} * K)[N] of a time series T{i}[n] (value 1 at positions
 .IR n{i} ,
-zero elsewhere) with an aging kernel:
+zero elsewhere) with the kernel K, evaluated at position N.
+.LP
+The default kernel is exponential:
 .LP
 .EX
-   K[j] = (1-j/N)^p
+   K[j] = exp(\-p*j/N)
 .EE
 .LP
-where j=0,...,N-1 is sample age in clock ticks relative to the most recent
-sample. This score accounts for the full visit chronology, assigning
-age-dependent weights controlled by parameters N and p.
+The alternative (legacy) kernel (SD_CFG[kernel]=0) is a power law:
+.LP
+.EX
+   K[j] = (1\-j/N)^p
+.EE
+.LP
+In both cases p controls the rate of decay with age; larger p assigns less weight
+to older events. Both kernels share K[0]=1, so each new visit contributes an
+increment of 1 to the directory's score. The exponential kernel provides exact
+preservation of relative stack order for non\-visited directories between
+successive cd events, the only exception being score adjustments due to window
+truncation which can occasionally affect lower-ranked entries where scores are
+closest in magnitude. The legacy power\-law kernel only approximately preserves
+order between events, making the exponential the preferred default for
+deterministic cycling over repeated same\-pattern invocations.
 .LP
 Directories i=1,...,I are sorted by score F[i], yielding the dynamic directory
 stack queried by
@@ -659,11 +675,10 @@ and
 With each further event (changed directory except / and \$HOME), the window
 advances one tick, computation repeats, and the stack updates.
 .LP
-Note: Since K[0]=1 independent of N and p, a first-time visit always gets
-initial score F=1. This provides an intuitive way to appreciate the effect of
-exponent p by examining stack scores with
+Note: K[0]=1 independent of kernel choice and parameters. This provides an
+intuitive way to appreciate the effect of p by examining stack scores with
 .BR "ds \-0" :
-adjusting p controls where a first-time visit initially appears on the stack.
+adjusting p controls where a first\-time visit initially appears on the stack.
 .
 .
 .SH INITIAL SETUP
@@ -814,15 +829,20 @@ function _sd__setup {
    ((mode = $? == 0? 2:1))
    : "${SD_CFG[dynamic]:="1"}"
    : "${SD_CFG[freeze]:="0"}"
+   : "${SD_CFG[kernel]:="1"}"
    : "${SD_CFG[mode]:="$mode"}"
    : "${SD_CFG[period]:="3600"}"
    : "${SD_CFG[power]:="10"}"
-   : "${SD_CFG[prefix]:="="}"; [[ ${SD_CFG[prefix]} == [=:,+?] ]] || SD_CFG[prefix]='='
+   : "${SD_CFG[prefix]:="="}"
    : "${SD_CFG[smartcase]:="1"}"
    : "${SD_CFG[stacklim]:="0"}"
    : "${SD_CFG[verbose]:="1"}"
    : "${SD_CFG[window]:="$window"}"
-   [[ ${SD_CFG[window]} != [1-9]*([0-9]) ]] && SD_CFG[window]="$window"  # guard against nonsensical user config specification, notably window=0
+   
+   # some selective config validity checks
+   [[ ${SD_CFG[kernel]} == [01] ]] || SD_CFG[kernel]=1
+   [[ ${SD_CFG[prefix]} == [=:,+?] ]] || SD_CFG[prefix]='='
+   [[ ${SD_CFG[window]} != [1-9]*([0-9]) ]] && SD_CFG[window]="$window"
 
    : "${SD_FZF[bind]:="ctrl-j:accept"}"
    : "${SD_FZF[color]:="header:bright-red"}"
@@ -845,7 +865,7 @@ function _sd__setup {
    : "${SD__INTERN[mysd]:="0"}"
    : "${SD__INTERN[mysdset]:="0"}"
    : "${SD__INTERN[sleep]:="0.01"}"
-   : "${SD__INTERN[version]:="3.2.1"}"
+   : "${SD__INTERN[version]:="3.3.0"}"
 
    : "${SD__STACK:=""}"
    : "${SD__NEW:=""}"
@@ -1158,6 +1178,7 @@ function _sd__info {
 
    typeset -a seltxt=('tabular listing' 'index-based selection' 'fzf-based selection')
    typeset -a smrtxt=('Case-sensitive' 'Smartcase')
+   typeset -a algtxt=('Power law' 'Exponential')
    typeset -i wd1=${#SD__LOGLIM} wl=${#lognum} wd2
    ((wd1 = wd1 > 5? wd1:5))  # for very small loglim (<100) we might get misalignment otherwise
    ((wd1 = wd1 > wl? wd1:wl)) && ((wd1+= 9)) # to account for the color escapes
@@ -1180,6 +1201,7 @@ function _sd__info {
    report+="window    : %*s     Trailing window for stack computation\n"
    report+="stacksize : %*s     Directories currently on stack %s\n"
    report+="power     : %*s     Age penalty parameter (0 = no penalty)\n"
+   report+="kernel    : %*s     %s aging kernel\n"
    report+="mode      : %*s     'ds [pattern]' provides %s\n"
    report+="verbose   : %*s     Verbosity level [012]\n"
    report+="prefix    : %*s     Prefix for rank-based cd\n"
@@ -1197,6 +1219,7 @@ function _sd__info {
       "$wd1" "$(_sd__dye "${SD_CFG[window]}" 32)" \
       "$wd1" "$(_sd__dye "$stacksize" 33)" "$static"\
       "$wd1" "$(_sd__dye "${SD_CFG[power]}" 34)" \
+      "$wd1" "$(_sd__dye "${SD_CFG[kernel]}" 35)" "$(_sd__dye "${algtxt[${SD_CFG[kernel]}]}" 35)" \
       "$wd1" "$(_sd__dye "${SD_CFG[mode]}" 35)" "$(_sd__dye "${seltxt[${SD_CFG[mode]}]}" 35)" \
       "$wd1" "$(_sd__dye "${SD_CFG[verbose]}" 36)" \
       "$wd2" "$(_sd__dye "${SD_CFG[prefix]}" 1)" \
@@ -1217,14 +1240,14 @@ function _sd__stack { ## 0/1
    ((window = window > lognum? lognum:window))
    SD__STACK=$(
       printf '%s\n' "${SD__ALL[@]: -$window}" |
-      awk -F '\t' -v window=$window -v power="${SD_CFG[power]}" '
+      awk -F '\t' -v window=$window -v power="${SD_CFG[power]}" -v kernel="${SD_CFG[kernel]}" '
          BEGIN { OFS = "\t" }
          {
-            score[$0] += (NR/window)^power
+            score[$0] += (kernel == 0) ? (NR/window)^power : exp(-power*(1-NR/window))
             freq[$0]  += 1
          }
          END { for (name in score) print score[name], freq[name], name }
-      ' | LC_ALL=C sort -k1,1gr -k2,2nr |
+      ' 2> /dev/null | LC_ALL=C sort -k1,1gr -k2,2nr |
       awk -F '\t' '{ printf "%#-8.4g\t%d\t%d\t%s\n", $1, $2, NR, $3 }'
    )
 }

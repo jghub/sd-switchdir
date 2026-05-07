@@ -1,5 +1,31 @@
 # SD — Changelog
 
+## v3.3.0 (2026-05-10)
+* **now defaults to exponential convolution kernel**: the legacy behaviour
+  (power law kernel) is still available by setting SD_CFG[kernel]=0 prior to
+  sourcing sd.ksh.
+
+  The exponential kernel differs from the legacy kernel in subtle but principally
+  relevant ways. For the same SD_CFG[power] setting (default: 10), both kernels
+  have the same first-order Taylor expansion, meaning recent events are weighted
+  identically. The exponential kernel falls off to zero somewhat more slowly and
+  thus assigns slightly higher weights to older events. Consequently, stack order
+  can differ slightly from that obtained with the legacy kernel, but for practical
+  purposes this difference is unlikely to be relevant.
+
+  More importantly, the exponential kernel preserves relative stack order exactly
+  for non-visited directories between successive cd events, which benefits
+  deterministic cycling over repeated same-pattern invocations. Score adjustments
+  due to window truncation can occasionally affect order of lower-ranked entries,
+  but this is unlikely to be noticeable in practice. The legacy power-law kernel
+  only approximately preserves stack order for non-visited directories.
+
+* **suppress spurious awk warnings**: on Linux with gawk, the exponential kernel
+  can trigger floating point underflow warnings in exp() for large values of
+  SD_CFG[power]. These are now silenced via stderr redirection in the scoring
+  pipeline. The underlying computation is unaffected. Other awk implementations
+  and gawk on macOS are not affected.
+
 ## v3.2.1 (2026-04-24)
 * **manpage**: better explanation of `fzf` configurability via `SD_FZF`.
 
