@@ -228,7 +228,23 @@ Add to your shell rc file:
 . /path/to/sd.ksh
 ```
 
-On first run, a logfile is created and initialized.
+On first run, a logfile is created and initialized. 
+
+**Naming conflicts:** If a command named `sd` already exists in your environment
+(e.g. the Rust-based [sd](https://github.com/chmln/sd) text replacement tool),
+SD will detect this and not define its own `sd` shell function. The existing
+command remains unaffected. In this case, use `cd` to access SD's functionality,
+or define a wrapper under a name of your choice:
+
+```sh
+function mysd { _sd__switch "$@"; }
+```
+
+The `ds` command can be renamed similarly if needed:
+
+```sh
+function myds { _sd__dispatch "$@"; }
+``` 
 
 ---
 
