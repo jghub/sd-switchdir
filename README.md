@@ -131,7 +131,7 @@ $j=N-1$ for the oldest), and $K[j]$ is an aging kernel assigning a weight to
 events of age $j$. The default kernel is exponential:
 
 $$
-K[j] = \exp \! \left( -p \cdot \frac{j}{N} \right)
+K[j] = \exp \left( -p \cdot \frac{j}{N} \right)
 $$
 
 The legacy power-law kernel (`SD_CFG[kernel]=0`) is:
