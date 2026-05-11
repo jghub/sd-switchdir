@@ -1,5 +1,20 @@
 # SD — Changelog
 
+## v3.3.1 (2026-05-24)
+* **fix logfile integrity in concurrent shell use**: `ds -c` and `ds -d` now
+  synchronise with logfile before writing, avoiding potential loss of entries
+  recently added by other shells.
+
+* **increase score reporting precision**: scores reported in the tabular stack
+  display and via `ds -r` are now shown with %.6g precision, consistent with the
+  precision used internally for sorting. Previously %.4g was used, which could
+  give the misleading impression that adjacent entries with very similar scores
+  were not correctly sorted.
+
+* **manpage**: added note that directories become available for pattern matching
+  only after being visited at least once via a pathname argument; added note on
+  expected behaviour during early use; minor wording corrections.
+
 ## v3.3.0 (2026-05-10)
 * **now defaults to exponential convolution kernel**: the legacy behaviour
   (power law kernel) is still available by setting SD_CFG[kernel]=0 prior to

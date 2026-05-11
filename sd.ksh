@@ -100,7 +100,7 @@ sd \- switch between directories using a dynamic directory stack
 |
 .OP \-d pat
 |
-.OP \-e pow
+.OP \-e p
 |
 .OP \-k K
 |
@@ -136,14 +136,19 @@ sorted by a "frecency" metric (see
 .IR "DIRECTORY STACK ALGORITHM" ).
 The stack is queried with
 .B sd
-.IR pattern ;
-when multiple directories match, the highest scoring match is selected. This
+.IR pattern .
+When multiple directories match, the highest scoring match is selected. This
 enables reaching desired locations even with highly unspecific patterns.
 .B sd
 .I [pathname|\-]
 behaves identical to the
 .B cd
 builtin (pathname interpretation takes precedence over pattern matching).
+Directories become available for pattern matching once visited via the
+.B sd
+or
+.B cd
+command using a pathname argument.
 .LP
 .B SD
 is written in
@@ -481,10 +486,12 @@ User-visible internal functions follow the naming scheme
 .BR _sd__funcname .
 User-visible internal variables follow
 .BR SD__VARNAME .
-The associative array
+The associative arrays
 .B SD_CFG
-holds configuration information. Default behaviour can be changed by modifying
-this array in your shell rc file (see
+and
+.B SD_FZF
+hold configuration information. Default behaviour can be changed by modifying
+these arrays in your shell rc file (see
 .IR CUSTOMIZATION ).
 Some
 .B SD
@@ -521,8 +528,10 @@ take effect only during startup and are ignored if modified later:
 typeset \-A SD_CFG=(
    [logdir]=${SD__LOGDIR}${pad[logdir]} # absolute path to logfile directory (\fB**\fP)
    [loglim]=${SD__LOGLIM}${pad[loglim]} # max. cd actions in logfile (\fB**\fP)
+
    [dynamic]=${SD_CFG[dynamic]}${pad[dynamic]} # auto-update stack after each cd?
    [freeze]=${SD_CFG[freeze]}${pad[freeze]} # freeze logfile? (usually: don't)
+   [kernel]=${SD_CFG[kernel]}${pad[kernel]} # kernel type (0: power law, 1: exponential)
    [mode]=${SD_CFG[mode]}${pad[mode]} # controls behaviour of \fBds \fIpattern\fR
    [period]=${SD_CFG[period]}${pad[period]} # flush delay period in seconds
    [power]=${SD_CFG[power]}${pad[power]} # age-penalty parameter
@@ -530,14 +539,15 @@ typeset \-A SD_CFG=(
    [smartcase]=${SD_CFG[smartcase]}${pad[smartcase]} # smartcase matching yes/no
    [stacklim]=${SD_CFG[stacklim]}${pad[stacklim]} # prescribe directory stack size
    [verbose]=${SD_CFG[verbose]}${pad[verbose]} # verbosity level [012]
-   [kernel]=${SD_CFG[kernel]}${pad[kernel]} # kernel type (0: power law, 1: exponential)
    [window]=${SD_CFG[window]}${pad[window]} # window size
+
 )
 .EE
 .LP
 After sourcing
 .IR sd.ksh ,
 the keys
+.BR kernel ,
 .BR period ,
 .BR prefix ,
 .BR smartcase ,
@@ -708,9 +718,13 @@ into your own handler.
 At first use, the logfile is seeded with non-hidden toplevel directories in
 \$HOME (emulating a single visit to each in alphabetical order) to provide a
 starting point. Subsequently, the logfile reflects actual cd activities.
+During early use, scores are uniformly low and ranking reflects little history.
+The stack stabilises meaningfully \- both in size and in rank order \- after a few
+days of normal cd activity.
 .LP
 To handle naming collisions with existing commands or aliases, redefine the
-wrapper functions using non-colliding names:
+wrapper functions in your rc file after sourcing sd.ksh, using non-colliding
+names:
 .LP
 .EX
    function myds { _sd__dispatch "\$@"; }
@@ -838,7 +852,7 @@ function _sd__setup {
    : "${SD_CFG[stacklim]:="0"}"
    : "${SD_CFG[verbose]:="1"}"
    : "${SD_CFG[window]:="$window"}"
-   
+
    # some selective config validity checks
    [[ ${SD_CFG[kernel]} == [01] ]] || SD_CFG[kernel]=1
    [[ ${SD_CFG[prefix]} == [=:,+?] ]] || SD_CFG[prefix]='='
@@ -865,7 +879,7 @@ function _sd__setup {
    : "${SD__INTERN[mysd]:="0"}"
    : "${SD__INTERN[mysdset]:="0"}"
    : "${SD__INTERN[sleep]:="0.01"}"
-   : "${SD__INTERN[version]:="3.3.0"}"
+   : "${SD__INTERN[version]:="3.3.1"}"
 
    : "${SD__STACK:=""}"
    : "${SD__NEW:=""}"
@@ -1052,6 +1066,13 @@ function _sd__logread {
 }
 
 function _sd__remove {
+   # need to sync SD__ALL with logfile before rewriting the logfile after tidy up
+   # in order to avoid loss of entries possibly added by other shell instances in
+   # the meantime. note that _sd__logread triggers '_sd__stack 1' internally and
+   # thus resets same-pattern cycling.
+   _sd__logappend
+   _sd__logread
+
    typeset -i window
    typeset check
    typeset IFS=' '
@@ -1089,6 +1110,10 @@ function _sd__remove {
 }
 
 function _sd__clean {
+   # see comment in _sd__remove 
+   _sd__logappend
+   _sd__logread
+
    typeset -a fresh=() stale=()
    typeset dname check
 
@@ -1133,9 +1158,11 @@ function _sd__match { ## what(0/1) pat
 
 function _sd__info {
    typeset IFS=$'\n'
-   typeset top report ttgtxt
+   typeset top report ttgtxt power
    typeset -i stacksize=0 lognum=0 newnum=0 ttg
    typeset -a ara=()
+
+   power=$(printf '%.4g' "${SD_CFG[power]}")
 
    lognum=${#SD__ALL[@]}
    set -o noglob
@@ -1218,7 +1245,7 @@ function _sd__info {
       "$wd1" "$(_sd__dye "${SD_CFG[period]}" 36)" "$ttgtxt" \
       "$wd1" "$(_sd__dye "${SD_CFG[window]}" 32)" \
       "$wd1" "$(_sd__dye "$stacksize" 33)" "$static"\
-      "$wd1" "$(_sd__dye "${SD_CFG[power]}" 34)" \
+      "$wd1" "$(_sd__dye "$power" 34)" \
       "$wd1" "$(_sd__dye "${SD_CFG[kernel]}" 35)" "$(_sd__dye "${algtxt[${SD_CFG[kernel]}]}" 35)" \
       "$wd1" "$(_sd__dye "${SD_CFG[mode]}" 35)" "$(_sd__dye "${seltxt[${SD_CFG[mode]}]}" 35)" \
       "$wd1" "$(_sd__dye "${SD_CFG[verbose]}" 36)" \
@@ -1248,7 +1275,7 @@ function _sd__stack { ## 0/1
          }
          END { for (name in score) print score[name], freq[name], name }
       ' 2> /dev/null | LC_ALL=C sort -k1,1gr -k2,2nr |
-      awk -F '\t' '{ printf "%#-8.4g\t%d\t%d\t%s\n", $1, $2, NR, $3 }'
+      awk -F '\t' '{ printf "%#-8.6g\t%d\t%d\t%s\n", $1, $2, NR, $3 }'
    )
 }
 
