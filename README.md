@@ -108,7 +108,7 @@ If `sd pattern` is invoked repeatedly with the exact same pattern:
 
 After a full traversal, a further cycle may reflect updated ranking due to score
 changes. The exponential kernel provides exact preservation of relative stack
-order for non-visited directories between successive cd events, the only exception
+order for non-visited directories across successive cd events, the only exception
 being score adjustments due to window truncation which can occasionally affect
 lower-ranked entries where scores are closest in magnitude. Apart from this
 effect, order of match traversal during further cycles will remain unaltered.
@@ -145,12 +145,12 @@ less weight to older events. Both kernels share $K[0]=1$, so a first-time visit
 always gets initial score $F=1$.
 
 The exponential kernel provides exact preservation of relative stack order for
-non-visited directories between successive cd events, making it the preferred
+non-visited directories across successive cd events, making it the preferred
 default for deterministic cycling over repeated same-pattern invocations. At
 window boundaries a small score perturbation can affect lower-ranked entries (see
 Cycling semantics above).
 
-The legacy power-law kernel only approximately preserves order between events
+The legacy power-law kernel only approximately preserves order across events
 while penalizing older events more heavily than the exponential kernel for the
 same value of $p$.
 
