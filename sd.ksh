@@ -594,8 +594,14 @@ User-defined entries in
 .B SD_FZF
 may be set either before or after sourcing
 .B sd.ksh
-and generally override internal defaults. The only exception is the default
-definition
+(in the latter case, use
+.I SD_FZF+=(...)
+instead of
+.I SD_FZF=(...)
+to add new keys to those already set by
+.BR sd.ksh )
+and generally override
+internal defaults. The only exception is the default definition
 .BR SD_FZF[exact]='' .
 To disable the
 .B --exact
@@ -865,7 +871,7 @@ function _sd__setup {
    : "${SD_FZF[layout]:="default"}"
    : "${SD_FZF[preview-window]:="top,38%"}"
 
-   : "${SD__STATE[dname]:=""}"
+   : "${SD__STATE[dname]:="$PWD"}"
    : "${SD__STATE[fail]:="0"}"
    : "${SD__STATE[lastpat]:=""}"
    : "${SD__STATE[pick]:="0"}"
@@ -879,7 +885,7 @@ function _sd__setup {
    : "${SD__INTERN[mysd]:="0"}"
    : "${SD__INTERN[mysdset]:="0"}"
    : "${SD__INTERN[sleep]:="0.01"}"
-   : "${SD__INTERN[version]:="3.3.1"}"
+   : "${SD__INTERN[version]:="3.3.2"}"
 
    : "${SD__STACK:=""}"
    : "${SD__NEW:=""}"
@@ -1110,7 +1116,7 @@ function _sd__remove {
 }
 
 function _sd__clean {
-   # see comment in _sd__remove 
+   # see comment in _sd__remove
    _sd__logappend
    _sd__logread
 
@@ -1118,7 +1124,7 @@ function _sd__clean {
    typeset dname check
 
    for dname in "${SD__ALL[@]}"; do
-      if [[ -d ${dname/#'~'/$HOME} ]]; then
+      if [[ -d ${dname/#\~/$HOME} ]]; then
          fresh+=("$dname")
       else
          stale+=("$dname")
@@ -1199,7 +1205,8 @@ function _sd__info {
          header=$(printf '%-8s\t%s\t%s\t%s' score count rank "name (top ten on stack)")
          printf '%s\n' "$(_sd__dye "$header" 1)"
          printf '%s\n' "$ruler1"
-         printf '%s\n' "${ara[@]: 0:10}"
+         printf '%s\n' "${ara[@]: 0:10}" |
+            awk '{buf[NR] = $0} END {while (NR) print buf[NR--]}'
       )
    fi
 
@@ -1261,16 +1268,18 @@ function _sd__stack { ## 0/1
    (( ${1:-0} )) && SD__STATE[tries]=1
 
    typeset -i lognum=${#SD__ALL[@]}
-   typeset -i window=${SD_CFG[window]}
-   # bash deviates from ksh/zsh regarding ${x[@]: -$num}: if num > len(x), bash
-   # returns empty string rather than full array so we have to catch this here:
-   ((window = window > lognum? lognum:window))
+   typeset -i window=${SD_CFG[window]} effwin
+   # effwin: actual number of events used for scoring (min. of configured window and available
+   # history). 'power' is scaled proportionally so that the per-event decay fraction remains equal
+   # to 'p/window' regardless of how full the log is, ensuring consistent kernel behaviour during
+   # early use.
+   ((effwin = (window > lognum) ? lognum:window))
    SD__STACK=$(
-      printf '%s\n' "${SD__ALL[@]: -$window}" |
-      awk -F '\t' -v window=$window -v power="${SD_CFG[power]}" -v kernel="${SD_CFG[kernel]}" '
-         BEGIN { OFS = "\t" }
+      printf '%s\n' "${SD__ALL[@]: -$effwin}" |
+      awk -F '\t' -v window=$window -v effwin=$effwin -v power="${SD_CFG[power]}" -v kernel="${SD_CFG[kernel]}" '
+         BEGIN { OFS = "\t"; power = power * effwin/window }
          {
-            score[$0] += (kernel == 0) ? (NR/window)^power : exp(-power*(1-NR/window))
+            score[$0] += (kernel == 0) ? (NR/effwin)^power : exp(-power*(1-NR/effwin))
             freq[$0]  += 1
          }
          END { for (name in score) print score[name], freq[name], name }
@@ -1502,14 +1511,14 @@ function _sd__switch {  ## regex
       fi
    done
 
-   # Log the new directory if not equal to one of $HOME, $OLDPWD, /. Value of $HOME is replaced
-   # by '~' in log entries. Achieving this portably across ksh/bash/zsh requires tilde in a
-   # variable: direct use of literal '~' as replacement string works in ksh/bash but not zsh
-   # (zsh treats replacement string verbatim including quotes).
+   # Log the new directory if not equal to one of $HOME, $OLDPWD, /. Value of $HOME is replaced by
+   # a tilde character in log entries. Achieving this portably across ksh/bash/zsh requires a bit
+   # care. best solution: avoid double quoting rhs and use \~ (which would tolerate additional
+   # double quoting) rather than single quoting '~' (which would lead to issues in zsh in the
+   # presencee of double quoting the value).
 
    if [[ $PWD != @($HOME|$OLDPWD|/) ]]; then
-      typeset entry tilde='~'
-      entry="${PWD/#$HOME/$tilde}"
+      entry=${PWD/#$HOME/\~}
       SD__NEW+="$entry"$'\n'
       SD__ALL+=("$entry")
       (( SD_CFG[dynamic] )) && _sd__stack
@@ -1529,11 +1538,8 @@ function _sd__choose { ## matches
 
    elif (( SD_CFG[mode] == 1 )); then
       typeset -i idx nrow
-      printf '%s\n' "$matches" | awk -F'\t' '
-         BEGIN { print "rank\tindex\tname" }
-         { print $(NF-1) "\t" NR "\t" $NF }
-      ' | less -FRX
-
+      printf '%s\n' "$matches" |
+         awk -F'\t' '{buf[NR] = NR "\t" $NF} END {while (NR) print buf[NR--]}'
       printf 'pick index (<CR> = 1; CTRL-D = abort): '
       read -r idx || { tput clear; return; }
       ((idx = idx == 0? 1:idx))
@@ -1561,7 +1567,7 @@ function _sd__choose { ## matches
       dname=$(printf '%s\n' "$matches" | awk -F'\t' '{print $NF}' | nl | fzf "${opts[@]}" | cut -f2)
       [[ -z $dname ]] && return 2
    fi
-   cd "${dname/#'~'/$HOME}" || return
+   cd "${dname/#\~/$HOME}" || return
 }
 
 function _sd__wincalc { ## stacklim
@@ -1664,9 +1670,8 @@ function _sd__dispatch {  ##  [-012Vcd:e:fhik:l:mnopsw] | [-s] [pattern]
             if [[ $PWD == @($HOME|/) ]]; then
                printf '%s\n' "'$HOME' and '/' are not tracked by SD"
             else
-               typeset tilde='~'
                printf '%s\n' "$SD__STACK" |
-                  pat="${PWD/#$HOME/$tilde}" awk -F'\t' '
+                  pat=${PWD/#$HOME/\~} awk -F'\t' '
                      $4 == ENVIRON["pat"] {
                         gsub(/ *$/, "", $1)
                         printf("%s: score %s (rank %s)\n", ENVIRON["pat"], $1, $3)
@@ -1716,10 +1721,9 @@ function _sd__dispatch {  ##  [-012Vcd:e:fhik:l:mnopsw] | [-s] [pattern]
    (( opflag[s] )) && matches=$(printf '%s\n' "$matches" | LC_ALL=C sort -k4)
 
    if (( SD_CFG[mode] == 0 )); then
-      {
-         printf '%-8s\t%s\t%s\t%s\n' score count rank name
-         printf '%s\n' "$matches"
-      } | less -FR
+      printf '%s\n' "$matches" |
+         awk '{buf[NR] = $0} END {while (NR) print buf[NR--]}'
+      printf '%-8s\t%s\t%s\n' score count rank
    else
       _sd__choose "$matches"
    fi

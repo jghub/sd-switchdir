@@ -1,5 +1,22 @@
 # SD — Changelog
 
+## v3.3.2 (2026-06-04)
+* **consistent kernel behaviour during early use**: the kernel decay rate p/N
+  now uses the configured window size N even if currently available history (log
+  size) L < N, as will be the case during early use until logfile has filled up
+  sufficiently. Prior to this fix, the decay rate was set to p/min(N, L), which
+  causes disproportionate recency bias until L approaches/exceeds N (typically
+  requiring a few weeks of usage).
+
+* **modified output layout of `ds -[01]` and `ds -i`**: now follows
+  `fzf's` bottom-up default layout when displaying the directory stack. `ds -1`
+  output changed to 2-column index vs. name format identical to `ds -2`. 
+  `ds -[01]` no longer pipes output through `less`.
+
+* **tilde character in string substitutions**: simplified portable handling
+  using consistent backslash protection instead of single quoting (which zsh
+  interprets differently from bash and ksh).
+
 ## v3.3.1 (2026-05-24)
 * **fix logfile integrity in concurrent shell use**: `ds -c` and `ds -d` now
   synchronise with logfile before writing, avoiding potential loss of entries
