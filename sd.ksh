@@ -885,7 +885,7 @@ function _sd__setup {
    : "${SD__INTERN[mysd]:="0"}"
    : "${SD__INTERN[mysdset]:="0"}"
    : "${SD__INTERN[sleep]:="0.01"}"
-   : "${SD__INTERN[version]:="3.3.2"}"
+   : "${SD__INTERN[version]:="3.3.3"}"
 
    : "${SD__STACK:=""}"
    : "${SD__NEW:=""}"
@@ -1518,7 +1518,7 @@ function _sd__switch {  ## regex
    # presencee of double quoting the value).
 
    if [[ $PWD != @($HOME|$OLDPWD|/) ]]; then
-      entry=${PWD/#$HOME/\~}
+      typeset entry=${PWD/#$HOME/\~}
       SD__NEW+="$entry"$'\n'
       SD__ALL+=("$entry")
       (( SD_CFG[dynamic] )) && _sd__stack

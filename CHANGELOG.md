@@ -1,5 +1,9 @@
 # SD — Changelog
 
+## v3.3.3 (2026-06-04)
+* **fix**: restore a missing typeset declaration to prevent variable scope leak
+  (regression in 3.3.2).
+
 ## v3.3.2 (2026-06-04)
 * **consistent kernel behaviour during early use**: the kernel decay rate p/N
   now uses the configured window size N even if currently available history (log
