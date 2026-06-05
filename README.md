@@ -28,6 +28,37 @@ successive rank-ordered matches.
 The companion command `ds` exposes the ranked directory stack and provides
 inspection and management functions.
 
+## Design characteristics
+
+SD is built around an explicit history of directory-change events rather than a
+database of per-directory aggregate scores.
+
+Consequences of this design include:
+
+* Full visit chronology is retained (subject to configured retention limits).
+* Ranking is derived from recorded history and can be recomputed at any time.
+* Scoring parameters and ranking models may be changed without invalidating
+  existing history.
+* Ranking depends on a configurable trailing window of events rather than
+  elapsed wall-clock time.
+* Repeated identical queries can cycle deterministically through ranked matches.
+
+For example:
+
+```sh
+sd project
+# ~/work/project-a
+
+sd project
+# ~/archive/project-b
+
+sd project
+# ~/experiments/project-c
+```
+
+Repeated use of the same pattern traverses matching directories in rank order.
+Using a different argument resets the cycle.
+
 ---
 
 ## What it does
@@ -316,6 +347,9 @@ Other directory-jumping tools include:
 * [z](https://github.com/rupa/z)
 * [zoxide](https://github.com/ajeetdsouza/zoxide)
 
-These tools maintain per-directory aggregate state rather than a full sequence of
-visits. SD retains the complete visit history up to a configurable limit and
-derives scores from it, unaffected by elapsed wall-clock time.
+These tools generally maintain per-directory aggregate state rather than a full
+sequence of visit events. SD retains the visit history itself (up to a
+configurable retention limit) and derives scores from that history. Because the
+underlying event sequence is preserved, scoring parameters can be changed and the
+stack recomputed for the given history. Ranking is based on a configurable
+trailing event window and is unaffected by elapsed wall-clock time.
