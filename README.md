@@ -338,6 +338,13 @@ The current configuration can be inspected with `typeset -p SD_FZF`.
 
 ## Related tools
 
+* [ze](https://github.com/jghub/ze): a fundamentally modified `z` fork
+implementing event-clock-based exponential moving average scoring. The scoring
+model is mathematically equivalent to SD's exponential kernel in the limit of
+unbounded history (the practical difference is SD's configurable bounded scoring
+window). `ze` uses aggregate per-directory state rather than full event history
+and has a z-inherited minimalist design.
+
 Other directory-jumping tools include:
 
 * [autojump](https://github.com/wting/autojump)

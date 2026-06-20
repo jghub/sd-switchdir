@@ -213,8 +213,9 @@ Delete entries matching pattern
 from logfile/history.
 .TP
 .BI \-e " p"
-Set the age-penalty parameter of the convolution kernel. Higher values decrease
-relevance of older visits. Fractional values allowed. Current value:
+Set the age-penalty parameter of the convolution kernel (fractional values using
+1.23 format are permissble). Higher values decrease relevance of older visits.
+Current value:
 .BR ${SD_CFG[power]} .
 .TP
 .B \-f
@@ -737,14 +738,19 @@ names:
    function mysd { _sd__switch "\$@"; }
 .EE
 .LP
-If you have a custom
+Users with a custom
 .B cd
-function, replace
+function must replace 
 .B "command cd
 with
 .B _sd__switch
-in that function to make it
-.BR SD -aware.
+in that function to ensure correct
+.B SD
+operation. Without this change, directories selected via
+.B ds
+will not be logged by
+.B SD
+and scores will not be updated.
 .LP
 .B SD
 provides a convenience alias
@@ -885,7 +891,7 @@ function _sd__setup {
    : "${SD__INTERN[mysd]:="0"}"
    : "${SD__INTERN[mysdset]:="0"}"
    : "${SD__INTERN[sleep]:="0.01"}"
-   : "${SD__INTERN[version]:="3.3.3"}"
+   : "${SD__INTERN[version]:="3.3.4"}"
 
    : "${SD__STACK:=""}"
    : "${SD__NEW:=""}"
@@ -1168,7 +1174,7 @@ function _sd__info {
    typeset -i stacksize=0 lognum=0 newnum=0 ttg
    typeset -a ara=()
 
-   power=$(printf '%.4g' "${SD_CFG[power]}")
+   power=$(LC_ALL=C printf '%.4g' "${SD_CFG[power]}")
 
    lognum=${#SD__ALL[@]}
    set -o noglob
@@ -1284,7 +1290,7 @@ function _sd__stack { ## 0/1
          }
          END { for (name in score) print score[name], freq[name], name }
       ' 2> /dev/null | LC_ALL=C sort -k1,1gr -k2,2nr |
-      awk -F '\t' '{ printf "%#-8.6g\t%d\t%d\t%s\n", $1, $2, NR, $3 }'
+      LC_ALL=C awk -F '\t' '{ printf "%#-8.6g\t%d\t%d\t%s\n", $1, $2, NR, $3 }'
    )
 }
 

@@ -1,5 +1,10 @@
 # SD — Changelog
 
+## v3.3.4 (2026-06-20)
+* **corner case fix**: ensure that stack score consistently uses decimal point
+  even in a locale using decimal comma. Clarify in manpage that SD_CFG[power]
+  needs to use decimal point when specifying a fractional value.
+
 ## v3.3.3 (2026-06-04)
 * **fix**: restore a missing typeset declaration to prevent variable scope leak
   (regression in 3.3.2).
