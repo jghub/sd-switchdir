@@ -253,6 +253,12 @@ a factor of two.
 * ksh93, bash, or zsh
 * Optional: `fzf` for interactive selection via `ds`
 
+macOS users can alternatively install SD via MacPorts:
+
+```sh
+sudo port install sd-switchdir
+```
+
 Add to your shell rc file:
 
 ```sh
@@ -260,6 +266,7 @@ Add to your shell rc file:
 ```
 
 On first run, a logfile is created and initialized. 
+
 
 **Naming conflicts:** If a command named `sd` already exists in your environment
 (e.g. the Rust-based [sd](https://github.com/chmln/sd) text replacement tool),
