@@ -891,7 +891,7 @@ function _sd__setup {
    : "${SD__INTERN[mysd]:="0"}"
    : "${SD__INTERN[mysdset]:="0"}"
    : "${SD__INTERN[sleep]:="0.01"}"
-   : "${SD__INTERN[version]:="3.3.4"}"
+   : "${SD__INTERN[version]:="3.3.5"}"
 
    : "${SD__STACK:=""}"
    : "${SD__NEW:=""}"
@@ -1152,7 +1152,7 @@ function _sd__clean {
 }
 
 function _sd__match { ## what(0/1) pat
-   typeset IFS=' '
+   typeset awkpat IFS=' '
    typeset -i what=$1 downcase=0 nf
    shift
    typeset pat="$*"

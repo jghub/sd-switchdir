@@ -1,5 +1,8 @@
 # SD — Changelog
 
+## v3.3.5 (2026-07-28)
+* **fix**: add a missing typeset declaration to prevent variable scope leak
+
 ## v3.3.4 (2026-06-20)
 * **corner case fix**: ensure that stack score consistently uses decimal point
   even in a locale using decimal comma. Clarify in manpage that SD_CFG[power]
